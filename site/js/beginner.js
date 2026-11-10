@@ -322,9 +322,8 @@ function lesson(el,id){
    <div class="lessonnav">${prev?`<a class="btn sec" href="#/pemula/${prev.id}">← ${T(prev.t)}</a>`:`<a class="btn sec" href="#/pemula">← ${T({id:"Daftar kelas",en:"Class list"})}</a>`}${next?`<a class="btn" href="#/pemula/${next.id}">${T(next.t)} →</a>`:`<a class="btn" href="#/modul/A">${T({id:"Lanjut ke Modul A →",en:"Continue to Module A →"})}</a>`}</div>
   </article>`;
   el.querySelectorAll(".quiz").forEach(box=>{ const qq=x.quiz[+box.dataset.q];
-    box.querySelectorAll("button").forEach(b=>b.onclick=()=>{ if(box.dataset.done) return; box.dataset.done=1; const ok=+b.dataset.o===qq.a;
-      box.querySelectorAll("button").forEach(bb=>{ if(+bb.dataset.o===qq.a) bb.classList.add("right"); else if(bb===b) bb.classList.add("wrong"); });
-      box.querySelector(".ex").innerHTML=`<b class="${ok?"up":"down"}">${ok?T({id:"Benar.",en:"Correct."}):T({id:"Belum tepat.",en:"Not quite."})}</b> ${T(qq.ex)}`; }); });
+    window.QuizUI.bind(box,{ buttons:".guess button", key:b=>b.dataset.o, correct:String(qq.a),
+      onAnswer:(k,ok)=>{ box.querySelector(".ex").innerHTML=`<b class="${ok?"up":"down"}">${ok?T({id:"Benar.",en:"Correct."}):T({id:"Belum tepat.",en:"Not quite."})}</b> ${T(qq.ex)}`; } }); });
   el.querySelector("#done").onchange=e=>{ const pp=prog(); pp["p_"+x.id]=e.target.checked; localStorage.setItem("sb_prog",JSON.stringify(pp)); };
   window.ReadAloud.attach(el.querySelector(".readbar"),el.querySelector(".lbody"));
   window.linkTerms(el.querySelector("article"));

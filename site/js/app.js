@@ -31,24 +31,70 @@ function linkTerms(root){
       const start=m.index+m[1].length, word=m[2];
       const after=n.splitText(start); const rest=after.splitText(word.length);
       const span=document.createElement("span"); span.className="term"; span.dataset.k=g.k; span.textContent=word; span.tabIndex=0;
+      span.setAttribute("role","button"); span.setAttribute("aria-haspopup","dialog"); span.setAttribute("aria-expanded","false"); span.setAttribute("aria-controls","termpop");
       after.parentNode.replaceChild(span,after);
       nodes.splice(i,1,n,rest); used.add(g.k); break;
     }
   }
 }
-let pop=null;
-function showTerm(el){
-  const g=glossary().find(x=>x.k===el.dataset.k); if(!g) return;
-  if(!pop){ pop=document.createElement("div"); pop.className="termpop"; document.body.appendChild(pop); }
+/* Popover istilah — machine "termPopover": hidden ⇄ shown.
+   SHOW(el) di hidden → shown; SHOW istilah yang sama saat shown → hidden (toggle); SHOW istilah lain → tetap shown, isi diganti.
+   HIDE: klik di luar, Esc, pindah halaman. */
+const pop=document.createElement("div"); pop.className="termpop"; pop.id="termpop"; pop.setAttribute("role","dialog"); pop.hidden=true; document.body.appendChild(pop);
+function placePop(el){
+  const g=glossary().find(x=>x.k===el.dataset.k); if(!g) return false;
+  pop.setAttribute("aria-label",g.k);
   pop.innerHTML=`<b>${g.k}</b><div>${T({id:g.id,en:g.en})}</div><a href="#/istilah?q=${encodeURIComponent(g.k)}">${T({id:"Buka kamus →",en:"Open glossary →"})}</a>`;
-  const r=el.getBoundingClientRect(); pop.style.display="block";
-  const w=Math.min(320,innerWidth-24); pop.style.width=w+"px";
+  const r=el.getBoundingClientRect(); const w=Math.min(320,innerWidth-24); pop.style.width=w+"px";
   pop.style.left=Math.max(12,Math.min(r.left+scrollX,scrollX+innerWidth-w-12))+"px";
-  pop.style.top=(r.bottom+scrollY+6)+"px";
+  pop.style.top=(r.bottom+scrollY+6)+"px"; return true;
 }
-document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest(".term"); if(t){ showTerm(t); e.stopPropagation(); } else if(pop && !e.target.closest(".termpop")) pop.style.display="none"; });
-document.addEventListener("keydown",e=>{ if(e.key==="Enter"&&e.target.classList&&e.target.classList.contains("term")) showTerm(e.target); if(e.key==="Escape"&&pop) pop.style.display="none"; });
+const popM=window.Machines.create({ id:"termPopover", initial:"hidden", context:{el:null}, states:{
+  hidden:{ enter:(c)=>{ pop.hidden=true; if(c.el) c.el.setAttribute("aria-expanded","false"); c.el=null; },
+    on:{ SHOW:{ target:"shown", guard:(c,el)=>!!el&&glossary().some(x=>x.k===el.dataset.k), action:(c,el)=>{ c.el=el; } } } },
+  shown:{ enter:(c)=>{ placePop(c.el); pop.hidden=false; c.el.setAttribute("aria-expanded","true"); },
+    on:{ HIDE:"hidden",
+      SHOW:{ target:"shown", guard:(c,el)=>!!el&&el!==c.el&&glossary().some(x=>x.k===el.dataset.k),
+        action:(c,el)=>{ c.el.setAttribute("aria-expanded","false"); c.el=el; placePop(el); el.setAttribute("aria-expanded","true"); } },
+      TOGGLE_SAME:"hidden" } } } }).bind(pop);
+function onTerm(el){ if(popM.is("shown") && popM.context.el===el) popM.send("TOGGLE_SAME"); else popM.send("SHOW",el); }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest(".term"); if(t){ onTerm(t); e.stopPropagation(); } else if(!e.target.closest(".termpop")) popM.send("HIDE"); });
+document.addEventListener("keydown",e=>{
+  if((e.key==="Enter"||e.key===" ")&&e.target.classList&&e.target.classList.contains("term")){ e.preventDefault(); onTerm(e.target); }
+  if(e.key==="Escape"){ if(popM.is("shown")){ const el=popM.context.el; popM.send("HIDE"); if(el) el.focus(); } else if(menuM.is("open")) menuM.send("CLOSE"); }
+});
 window.linkTerms=linkTerms;
+
+/* Menu (drawer di HP) — machine "menu": closed ⇄ open. Tutup lewat tombol, klik scrim, Esc, atau pindah halaman. */
+const side=document.getElementById("side"), menuBtn=document.getElementById("menuBtn"), scrim=document.getElementById("scrim");
+const menuM=window.Machines.create({ id:"menu", initial:"closed", states:{
+  closed:{ enter:(c,p)=>{ const hadFocus=side.contains(document.activeElement); side.classList.remove("open"); scrim.hidden=true; menuBtn.setAttribute("aria-expanded","false"); if(hadFocus&&!(p&&p.silent)) menuBtn.focus(); },
+    on:{ TOGGLE:"open", OPEN:"open" } },
+  open:{ enter:()=>{ side.classList.add("open"); scrim.hidden=false; menuBtn.setAttribute("aria-expanded","true"); const a=side.querySelector("#nav a.on")||side.querySelector("#nav a"); if(a) a.focus(); },
+    on:{ TOGGLE:"closed", CLOSE:"closed" } } } }).bind(side);
+menuBtn.onclick=()=>menuM.send("TOGGLE");
+scrim.onclick=()=>menuM.send("CLOSE");
+
+/* Tema — machine "theme": system → light → dark → system. "system" mengikuti pengaturan perangkat. */
+const THEME_LABEL={system:{id:"Otomatis",en:"Auto"},light:{id:"Terang",en:"Light"},dark:{id:"Gelap",en:"Dark"}};
+const applyTheme=s=>{ if(s==="system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme=s;
+  try{ if(s==="system") localStorage.removeItem("sb_theme"); else localStorage.setItem("sb_theme",s); }catch(e){} };
+const themeInit=(()=>{ try{ const v=localStorage.getItem("sb_theme"); return v==="light"||v==="dark"?v:"system"; }catch(e){ return "system"; } })();
+const themeM=window.Machines.create({ id:"theme", initial:themeInit, states:{
+  system:{ enter:()=>applyTheme("system"), on:{ NEXT:"light" } },
+  light:{ enter:()=>applyTheme("light"), on:{ NEXT:"dark" } },
+  dark:{ enter:()=>applyTheme("dark"), on:{ NEXT:"system" } } } });
+applyTheme(themeInit);
+const themeBtn=document.getElementById("themeBtn"); themeM.bind(themeBtn);
+function renderThemeBtn(){ const lab=T(THEME_LABEL[themeM.state]); themeBtn.textContent=`◐ ${T({id:"Tema",en:"Theme"})}: ${lab}`; themeBtn.setAttribute("aria-label",`${T({id:"Ganti tema, sekarang",en:"Change theme, currently"})} ${lab}`); }
+themeBtn.onclick=()=>{ themeM.send("NEXT"); renderThemeBtn(); };
+
+/* Bahasa — machine "lang": id ⇄ en. window.setLang tetap tersedia dan kini lewat machine. */
+const applyLang=window.setLang;
+const langM=window.Machines.create({ id:"lang", initial:window.LANG==="en"?"en":"id", states:{
+  id:{ enter:()=>applyLang("id"), on:{ EN:"en" } },
+  en:{ enter:()=>applyLang("en"), on:{ ID:"id" } } } });
+window.setLang=l=>langM.send(String(l).toUpperCase());
 
 /* ---------- Navigasi ---------- */
 const NAV=[
@@ -60,10 +106,11 @@ const NAV=[
 ];
 function drawNav(){
   document.getElementById("nav").innerHTML=NAV.map(n=> n[0]==="#" ? `<div class="sec">${L(n[1])}</div>` : `<a href="#/${n[0]}" data-r="${n[0]||"home"}"><span class="ic">${n[1]}</span>${L(n[2])}</a>`).join("");
-  document.getElementById("themeBtn").textContent=L("◐ Tema");
+  renderThemeBtn();
   document.getElementById("madeBy").textContent=T({id:"Dibuat oleh",en:"Created by"});
   document.querySelector(".brand small").textContent=T({id:"Sekolah Saham Indonesia",en:"Indonesian Stock School"});
-  document.querySelectorAll("#langBtns button").forEach(b=>b.classList.toggle("on",b.dataset.l===window.LANG));
+  document.querySelectorAll("#langBtns button").forEach(b=>{ const on=b.dataset.l===window.LANG; b.classList.toggle("on",on); b.setAttribute("aria-pressed",on?"true":"false"); });
+  document.getElementById("menuBtn").setAttribute("aria-label",T({id:"Buka menu navigasi",en:"Open navigation menu"}));
   document.getElementById("footNote").innerHTML=T({id:'Materi edukasi, bukan ajakan beli/jual. Aturan BEI sering berubah — cek <a href="https://www.idx.co.id" target="_blank" rel="noopener">idx.co.id</a>.',en:'Educational material, not a buy/sell recommendation. IDX rules change often — check <a href="https://www.idx.co.id" target="_blank" rel="noopener">idx.co.id</a>.'});
 }
 
@@ -74,7 +121,7 @@ function home(){
   const next=ALL.find(l=>!p[l.id]);
   const bp=(window.BEGINNER||[]).flatMap(l=>l.lessons).filter(x=>p["p_"+x.id]).length, bt=(window.BEGINNER||[]).flatMap(l=>l.lessons).length;
   view.innerHTML=`
-  <div class="kicker">Stonkbitt · ${T({id:"Sekolah Saham Indonesia",en:"Indonesian Stock School"})}</div>
+  <div class="kicker">Ritelrasional.app · ${T({id:"Sekolah Saham Indonesia",en:"Indonesian Stock School"})}</div>
   <h1>${T({id:'Dari "main saham sejak 2016" menjadi trader yang bisa membaca pasar.',en:'From "trading since 2016" to actually reading the market.'})}</h1>
   <p class="lead">${T({id:"Kurikulum A–Z untuk Bursa Efek Indonesia: mekanisme bursa, fundamental, teknikal, <b>bandarmologi</b>, <b>membaca order book dalam 3 detik</b>, <b>foreign flow</b>, risiko, sampai <b>jalur CFA</b>. Baru mulai? Ikuti <a href='#/pemula'>Kelas Pemula</a> dulu.",en:"An A–Z curriculum for the Indonesia Stock Exchange: market mechanics, fundamentals, technicals, <b>bandarmology</b> (smart-money tracking), <b>reading the order book in 3 seconds</b>, <b>foreign flow</b>, risk, and a <b>CFA path</b>. New to stocks? Start with the <a href='#/pemula'>Beginner Class</a>."})}</p>
   <div class="grid g4" style="margin:22px 0">
@@ -92,7 +139,7 @@ function home(){
    <div class="hint">${m.d}</div>
    <div class="lessons">${m.lessons.map(l=>`<a href="#/pelajaran/${l.id}" class="${p[l.id]?"done":""}">${l.id.toUpperCase()} · ${l.t}</a>`).join("")}</div></div></div>`; }).join("")}
   <div class="track"><div class="node">★</div><div class="card"><a href="#/cfa"><b style="font-size:16px;color:var(--text)">${L("Jalur CFA (L1–L3)")}</b></a><div class="hint">${T({id:"Peta topik CFA ↔ WPPE/WMI ↔ materi di sini, rencana waktu, flashcard rumus.",en:"CFA topics ↔ WPPE/WMI ↔ this site, a timeline planner, formula flashcards."})}</div><div class="lessons"><a href="#/cfa">CFA</a><a href="#/tools">${window.Tools.list.length} ${T({id:"kalkulator",en:"calculators"})}</a><a href="#/global">${L("Pengaruh Global (USD, S&P)")}</a><a href="#/pustaka">${T({id:"Pustaka",en:"Library"})}</a></div></div></div>
-  <div class="card" style="margin-top:28px;display:flex;gap:16px;align-items:center;flex-wrap:wrap"><img src="assets/logo.svg" alt="" width="56" height="56" style="border-radius:14px"><div><b style="font-family:var(--serif);font-size:20px">Stonkbitt</b><div class="hint">${T({id:"Masterclass saham Indonesia — supaya tidak mudah dibohongi. Dibuat oleh",en:"An Indonesian stock masterclass — so nobody can fool you. Created by"})} <b>Horos Phoibos</b>.</div></div></div>
+  <div class="card" style="margin-top:28px;display:flex;gap:16px;align-items:center;flex-wrap:wrap"><img src="assets/logo.svg" alt="" width="56" height="56" style="border-radius:14px"><div><b style="font-family:var(--serif);font-size:20px">Ritelrasional<span class="tld">.app</span></b><div class="hint">${T({id:"Masterclass saham Indonesia — supaya tidak mudah dibohongi. Dibuat oleh",en:"An Indonesian stock masterclass — so nobody can fool you. Created by"})} <b>Horos Phoibos</b>.</div></div></div>
   <div class="note warn" style="margin-top:16px"><b>Disclaimer.</b> ${T({id:"Semua materi untuk edukasi, bukan rekomendasi beli/jual. Data di Lab adalah simulasi dengan ticker fiktif.",en:"All material is educational, not a buy/sell recommendation. Lab data is simulated with fictional tickers."})}</div>`;
 }
 function modul(id){
@@ -137,11 +184,12 @@ function notFound(){ view.innerHTML=`<h1>${L("Halaman tidak ditemukan")}</h1><a 
 
 function route(){
   if(active&&active.unmount) active.unmount(); active=null; window.ReadAloud&&window.ReadAloud.stop();
-  if(pop) pop.style.display="none";
+  popM.send("HIDE");
   const h=location.hash.replace(/^#\/?/,""); const [path,qs]=h.split("?"); const q=Object.fromEntries(new URLSearchParams(qs||""));
   const parts=path.split("/");
   document.querySelectorAll("#nav a").forEach(a=>a.classList.toggle("on", a.dataset.r===(path||"home") || a.dataset.r===parts[0] || (parts[0]==="pelajaran" && a.dataset.r==="modul/"+(parts[1]||"").charAt(0).toUpperCase())));
-  document.getElementById("side").classList.remove("open");
+  menuM.send("CLOSE",{silent:true});
+  view.dataset.route=parts[0]||"home"; delete view.dataset.machine; delete view.dataset.state;
   const pages={lab:window.Lab,bsum:window.BSum,broker:window.BrokerDict,asing:window.Asing,cfa:window.CFA,tools:window.Tools,pustaka:window.Books,
     pemula:window.Beginner,ekspektasi:window.Expect,indeks:window.Indices,global:window.Global,riset:window.Research,indikator:window.Indicators,pelan:window.Guide};
   if(!path) home();
@@ -154,9 +202,7 @@ function route(){
 }
 window.addEventListener("hashchange",route);
 window.addEventListener("langchange",()=>{ drawNav(); route(); });
-document.getElementById("menuBtn").onclick=()=>document.getElementById("side").classList.toggle("open");
-const th=localStorage.getItem("sb_theme"); if(th) document.documentElement.dataset.theme=th;
-document.getElementById("themeBtn").onclick=()=>{ const n=document.documentElement.dataset.theme==="light"?"dark":"light"; document.documentElement.dataset.theme=n; localStorage.setItem("sb_theme",n); };
 document.querySelectorAll("#langBtns button").forEach(b=>b.onclick=()=>window.setLang(b.dataset.l));
+langM.bind(document.getElementById("langBtns"));
 drawNav(); route();
 })();

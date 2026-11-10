@@ -1,4 +1,4 @@
-# Stonkbitt — Sekolah Saham Indonesia
+# Ritelrasional.app — Sekolah Saham Indonesia
 
 Masterclass saham & trading Indonesia dari A sampai Z, dwibahasa (ID/EN), untuk dipakai sendiri dan dibagikan. Dibuat oleh **Horos Phoibos**. Tanpa build step, cukup HTML/CSS/JS statis. Progres, catatan, dan skor tersimpan di browser masing-masing (localStorage).
 
@@ -9,6 +9,8 @@ cd ~/Documents/websites/stonkbitt/site && python3 -m http.server 8770
 ```
 
 Lalu buka **http://localhost:8770**. Dari HP di WiFi yang sama: `http://<IP-Mac>:8770`.
+
+Versi online (GitHub Pages): https://horosphoibos.github.io/Stonkbitt/ — alamat ini masih memakai nama repo lama; kalau repo diganti nama, alamatnya ikut berubah.
 
 ## Isi
 
@@ -42,4 +44,11 @@ Materi untuk edukasi, bukan rekomendasi investasi. Data di Lab adalah simulasi d
 
 ## Desain
 
-Teks isi 17–18px, spasi baris 1,65, lebar baca ±68 karakter, font Atkinson Hyperlegible Next (isi), Fraunces (judul), JetBrains Mono (angka). Tema terang/gelap mengikuti sistem dan bisa diganti. Logo & favicon ada di `site/assets/`.
+Teks isi 17–18px, spasi baris 1,65, lebar baca ±68 karakter, font Atkinson Hyperlegible Next (isi), Fraunces (judul), JetBrains Mono (angka). Tema punya tiga keadaan (Otomatis → Terang → Gelap). Logo & favicon ada di `site/assets/` (`logo.svg`, `favicon.svg`, `apple-touch-icon.png`) dan `site/favicon.ico`.
+
+## Struktur kode & state machine
+
+Semua interaksi yang punya keadaan (menu, popover istilah, tema, bahasa, tombol bacakan, ronde Lab Order Book, kuis, stepper Belajar Pelan-pelan, flashcard, sumber data Lab Indikator) ditulis sebagai **state machine eksplisit** memakai `site/js/fsm.js`. Daftar lengkap, diagram transisi, dan cara menambah machine baru ada di [`docs/STATE_MACHINES.md`](docs/STATE_MACHINES.md). Panduan singkat untuk agen AI ada di [`site/llms.txt`](site/llms.txt).
+
+Kunci `localStorage` masih memakai awalan `sb_` (dari nama lama) supaya progres pengguna yang sudah ada tidak hilang.
+

@@ -1,0 +1,28 @@
+# Ritelrasional.app
+
+> Sekolah saham Indonesia dwibahasa (ID/EN): kelas pemula, kurikulum A–G (BEI, fundamental, teknikal, bandarmologi, order book, foreign flow, risiko), kelas langkah-demi-langkah, lab latihan, kalkulator, dan jalur CFA. Situs statis tanpa backend; semua data latihan fiktif. Materi edukasi, bukan rekomendasi investasi.
+
+## Rute (hash router)
+
+- `#/` peta belajar · `#/pemula` dan `#/pemula/<p1..p8|q1..q8>` kelas pemula
+- `#/modul/<A..G>` dan `#/pelajaran/<a1..g3>` kurikulum
+- `#/pelan` dan `#/pelan/<ob|bandar|asing|lapkeu|valuasi|ichi|rsi|bb|fib|ma>?s=<langkah>` belajar pelan-pelan
+- `#/lab` simulator order book · `#/indikator` lab indikator & backtest · `#/bsum` lab broker summary
+- `#/broker` kamus kode broker · `#/asing` matriks asing vs lokal · `#/indeks` daftar LQ45 · `#/global` pengaruh global
+- `#/ekspektasi`, `#/riset`, `#/cfa`, `#/tools?t=<id>`, `#/pustaka`, `#/istilah?q=<istilah>`
+
+## Membaca & menggerakkan UI (untuk agen)
+
+- `window.Machines.list()` → `[{id, state, events, enabled}]` untuk semua machine aktif: menu, termPopover, theme, lang, readAloud, orderBookLab, guide, flashcards, indicatorData.
+- `window.Machines.get(id).send(EVENT, payload)` menggerakkan UI persis seperti klik pengguna; event yang tidak sah dikembalikan `false` dan diabaikan.
+- Elemen yang terhubung ke machine memiliki `data-machine` dan `data-state`. `#view` memiliki `data-route`.
+- Kuis: kotak `.quiz` (atau elemen yang di-bind) memiliki `data-state="open|answered"` dan `data-result="correct|wrong"` setelah dijawab.
+- Contoh: `Machines.get("guide").send("NEXT")`, `Machines.get("orderBookLab").send("PAUSE")`, `Machines.get("theme").send("NEXT")`, `window.setLang("en")`.
+
+## Penyimpanan
+
+- `localStorage` dengan awalan `sb_` (progres, catatan, skor, tema, kecepatan bacakan). Awalan lama dipertahankan agar progres tidak hilang.
+
+## Dokumentasi
+
+- Detail state machine: docs/STATE_MACHINES.md di repositori.

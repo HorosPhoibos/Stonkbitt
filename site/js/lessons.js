@@ -1,4 +1,4 @@
-/* Kurikulum Stonkbitt — semua materi ditulis ulang dengan bahasa sendiri.
+/* Kurikulum Ritelrasional.app — semua materi ditulis ulang dengan bahasa sendiri.
    Struktur: modul → pelajaran { id, t (judul), m (menit), inti, body (HTML), trap, prak, ref } */
 window.MODULES = [
 /* ============================== A ============================== */

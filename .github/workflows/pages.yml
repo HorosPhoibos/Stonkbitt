@@ -1,4 +1,4 @@
-name: Deploy Stonkbitt to GitHub Pages
+name: Deploy Ritelrasional.app to GitHub Pages
 
 on:
   push:

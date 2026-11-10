@@ -44,8 +44,8 @@ function mountCFA(el){
    <div class="card"><b>Bulanan · ½ hari</b><p class="hint">Analisis lengkap 1 emiten: laporan keuangan, rasio, valuasi (tools DCF/PBV), broker summary, foreign flow. Ini latihan L2 yang sebenarnya.</p></div>
   </div>
   <h2>Flashcard rumus</h2>
-  <p class="hint">Klik kartu untuk membalik. "Hafal" menyembunyikan kartu selama 7 hari.</p>
-  <div class="card flash-card" id="fc"></div>
+  <p class="hint">Klik kartu (atau tekan Enter/Spasi) untuk membalik. "Hafal" menyembunyikan kartu selama 7 hari.</p>
+  <button type="button" class="card flash-card" id="fc" aria-live="polite"></button>
   <div class="controls" style="justify-content:center"><button class="btn sec" id="fcAgain">↻ Ulangi</button><button class="btn up" id="fcOk">✓ Hafal</button><span class="hint" id="fcInfo"></span></div>`;
   const drawPlan=()=>{ const a=+el.querySelector("#cfaAge").value, t=+el.querySelector("#cfaTgt").value; localStorage.setItem("sb_cfaplan",JSON.stringify({age:a,target:t}));
     const y=Math.max(0,t-a);
@@ -60,15 +60,31 @@ function mountCFA(el){
     <ol>${phases.map(p=>`<li><b>${p[0]}</b> — ${p[1]}</li>`).join("")}</ol>`; };
   el.querySelectorAll("#cfaAge,#cfaTgt").forEach(i=>i.oninput=drawPlan); drawPlan();
   // flashcards
-  const st=JSON.parse(localStorage.getItem("sb_fc")||"{}"); let idx=0, flip=false;
+  /* Flashcard — machine "flashcards": front ⇄ back ; front|back --KNOW--> front (kartu berikutnya) atau empty ; AGAIN → kartu acak lain.
+     Di "empty" kartu & tombol nonaktif, jadi "Hafal" tidak bisa lagi menandai kartu lama. */
+  let st={}; try{ st=JSON.parse(localStorage.getItem("sb_fc")||"{}"); }catch(e){}
   const due=()=>CARDS.map((c,i)=>i).filter(i=>!st[i]||st[i]<Date.now());
-  const show=()=>{ const d=due(); const box=el.querySelector("#fc"); el.querySelector("#fcInfo").textContent=`${d.length}/${CARDS.length} kartu jatuh tempo`;
-    if(!d.length){ box.innerHTML="🎉 Semua kartu hafal. Kembali minggu depan."; return; }
-    idx=d[Math.floor(Math.random()*d.length)]; flip=false; box.innerHTML=`<div class="muted" style="font-size:13px">Rumus</div><b>${CARDS[idx][0]}</b>`; };
-  el.querySelector("#fc").onclick=()=>{ if(!due().length) return; flip=!flip; el.querySelector("#fc").innerHTML= flip? `<div class="muted" style="font-size:13px">${CARDS[idx][0]}</div><span class="mono">${CARDS[idx][1]}</span>` : `<div class="muted" style="font-size:13px">Rumus</div><b>${CARDS[idx][0]}</b>`; };
-  el.querySelector("#fcAgain").onclick=show;
-  el.querySelector("#fcOk").onclick=()=>{ st[idx]=Date.now()+7*864e5; localStorage.setItem("sb_fc",JSON.stringify(st)); show(); };
-  show();
+  const box=el.querySelector("#fc"), bAgain=el.querySelector("#fcAgain"), bOk=el.querySelector("#fcOk"), info=el.querySelector("#fcInfo");
+  const pickCard=c=>{ const d=due(); c.idx=d.length?d[Math.floor(Math.random()*d.length)]:-1; };
+  const paint=()=>{ const c=fcM.context, s=fcM.state; info.textContent=`${due().length}/${CARDS.length} kartu jatuh tempo`;
+    const empty=s==="empty"||c.idx<0; box.disabled=empty; bAgain.disabled=empty; bOk.disabled=empty;
+    box.innerHTML= empty ? "🎉 Semua kartu hafal. Kembali minggu depan."
+      : s==="back" ? `<div class="muted" style="font-size:13px">${CARDS[c.idx][0]}</div><span class="mono">${CARDS[c.idx][1]}</span>`
+      : `<div class="muted" style="font-size:13px">Rumus</div><b>${CARDS[c.idx][0]}</b>`;
+    box.setAttribute("aria-label", empty?"Semua kartu hafal": s==="back"?`Jawaban: ${CARDS[c.idx][1]}. Tekan untuk kembali ke pertanyaan.`:`Rumus: ${CARDS[c.idx][0]}. Tekan untuk melihat jawaban.`); };
+  const next=c=>{ pickCard(c); return c.idx>=0; };
+  const remember=c=>{ if(c.idx<0) return; st[c.idx]=Date.now()+7*864e5; try{ localStorage.setItem("sb_fc",JSON.stringify(st)); }catch(e){} };
+  const fcM=window.Machines.create({ id:"flashcards", initial:"front", context:{idx:-1}, states:{
+    front:{ enter:paint, on:{ FLIP:{ target:"back", guard:c=>c.idx>=0 }, AGAIN:{ action:(c)=>{ next(c); paint(); } },
+      KNOW:{ target:"front", action:(c)=>{ remember(c); next(c); paint(); } }, EMPTY:"empty" } },
+    back:{ enter:paint, on:{ FLIP:{ target:"front", guard:c=>c.idx>=0 }, AGAIN:{ target:"front", action:(c)=>next(c) },
+      KNOW:{ target:"front", action:(c)=>{ remember(c); next(c); } }, EMPTY:"empty" } },
+    empty:{ enter:paint, on:{} } } }).bind(box);
+  const settle=()=>{ if(fcM.context.idx<0) fcM.send("EMPTY"); };
+  box.onclick=()=>fcM.send("FLIP");
+  bAgain.onclick=()=>{ fcM.send("AGAIN"); settle(); };
+  bOk.onclick=()=>{ fcM.send("KNOW"); settle(); };
+  if(next(fcM.context)) paint(); else fcM.send("EMPTY");
 }
 
 const BOOKS=[

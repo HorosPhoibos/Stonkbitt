@@ -107,9 +107,36 @@ function parseCSV(txt){
   return D.map((x,i)=>({...x,d:i}));
 }
 
+/* ---------- Sumber data — machine "indicatorData": ready | loading | error ----------
+   LOAD(file) → loading; LOADED/FAIL hanya diterima bila token cocok dengan berkas terakhir (berkas lama yang selesai belakangan diabaikan).
+   Halaman hanya digambar ulang bila Lab Indikator masih terbuka — pindah halaman saat memuat tidak lagi menimpa halaman lain. */
+let mountedEl=null;
+const demoName=()=>T({id:"Data demo (acak, fiktif)",en:"Demo data (random, fictional)"});
+function setStatus(){ const st=mountedEl&&mountedEl.querySelector("#ilStatus"); if(!st) return; const c=dataM.context;
+  st.className="hint il-status "+dataM.state;
+  st.textContent = dataM.is("loading") ? T({id:`Memuat ${c.file}…`,en:`Loading ${c.file}…`}) : dataM.is("error") ? "⚠️ "+c.msg : "";
+  const up=mountedEl.querySelector("#ilFile"); if(up) up.disabled=dataM.is("loading"); }
+function readFile(c,f){ const tok=c.token; const rd=new FileReader();
+  rd.onload=()=>{ try{ const D=parseCSV(rd.result); if(D.length<260) throw new Error(T({id:"Butuh minimal ±260 baris harian (1 tahun).",en:"Need at least ~260 daily rows (1 year)."})); dataM.send("LOADED",{token:tok,D,name:f.name}); }catch(err){ dataM.send("FAIL",{token:tok,msg:err.message}); } };
+  rd.onerror=()=>dataM.send("FAIL",{token:tok,msg:T({id:"Berkas tidak bisa dibaca.",en:"The file could not be read."})});
+  rd.readAsText(f); }
+const dataM=window.Machines.create({ id:"indicatorData", initial:"ready", context:{token:0,file:"",msg:""}, states:{
+  ready:{ enter:()=>{ if(mountedEl&&mountedEl.isConnected) mount(mountedEl); }, on:{
+    LOAD:{ target:"loading", action:(c,f)=>{ c.token++; c.file=f.name; } },
+    DEMO:{ action:()=>{ DATA=demo(Math.floor(Math.random()*1e6)); NAME=demoName(); if(mountedEl&&mountedEl.isConnected) mount(mountedEl); } } } },
+  loading:{ enter:(c,f)=>{ setStatus(); readFile(c,f); },
+    on:{ LOADED:{ target:"ready", guard:(c,p)=>p.token===c.token, action:(c,p)=>{ DATA=p.D; NAME=p.name; } },
+      FAIL:{ target:"error", guard:(c,p)=>p.token===c.token, action:(c,p)=>{ c.msg=p.msg; } },
+      LOAD:{ target:"loading", action:(c,f)=>{ c.token++; c.file=f.name; setStatus(); readFile(c,f); } } } },
+  error:{ enter:()=>setStatus(), on:{
+    LOAD:{ target:"loading", action:(c,f)=>{ c.token++; c.file=f.name; } },
+    DEMO:{ target:"ready", action:()=>{ DATA=demo(Math.floor(Math.random()*1e6)); NAME=demoName(); } },
+    DISMISS:"ready" } } } });
+
 /* ---------- UI ---------- */
 function mount(el){
-  if(!DATA){ DATA=demo(7); NAME=T({id:"Data demo (acak, fiktif)",en:"Demo data (random, fictional)"}); }
+  mountedEl=el;
+  if(!DATA){ DATA=demo(7); NAME=demoName(); }
   el.innerHTML=`<div class="kicker">${T({id:"Latihan · Teknikal",en:"Practice · Technicals"})}</div>
   <h1>${T({id:"Lab Indikator: Fibonacci, RSI, Ichimoku & lainnya",en:"Indicator Lab: Fibonacci, RSI, Ichimoku & more"})}</h1>
   <p class="lead">${T({id:"Pelajari cara kerja tiap indikator, lihat di grafik, lalu <b>ukur sendiri peluangnya</b> lewat backtest — termasuk gabungan beberapa indikator. Unggah data harga saham IDX (CSV) untuk hasil nyata.",en:"Learn how each indicator works, see it on a chart, then <b>measure its odds yourself</b> with a backtest — including combinations. Upload IDX price data (CSV) for real results."})}</p>
@@ -118,10 +145,11 @@ function mount(el){
    <div class="controls" style="margin-top:0"><b>${T({id:"Data:",en:"Data:"})}</b> <span id="ilName">${NAME}</span> · <span class="hint" id="ilBars">${DATA.length} bar</span></div>
    <div class="controls"><label class="btn sec" style="cursor:pointer">📄 ${T({id:"Unggah CSV",en:"Upload CSV"})}<input type="file" id="ilFile" accept=".csv,text/csv" hidden></label>
     <button class="btn sec" id="ilDemo">🎲 ${T({id:"Data demo baru",en:"New demo data"})}</button></div>
+   <p id="ilStatus" class="hint il-status" role="status" aria-live="polite"></p>
    <p class="hint">${T({id:"Format: kolom Date, Open, High, Low, Close, Volume (harian). Contoh sumber: unduh 'Historical Data' saham berakhiran <code>.JK</code> (mis. BBCA.JK, ASII.JK) dari situs data pasar, atau ekspor dari aplikasi broker-mu. Data hanya diproses di browser-mu.",en:"Format: columns Date, Open, High, Low, Close, Volume (daily). Example source: download 'Historical Data' for tickers ending in <code>.JK</code> (e.g. BBCA.JK, ASII.JK) from a market-data site, or export from your broker app. Data is processed only in your browser."})}</p>
   </div>
   <h2>${T({id:"1 · Pahami indikatornya",en:"1 · Understand the indicator"})}</h2>
-  <div class="toolnav" id="ilTabs">${Object.entries(IND).map(([k,v],i)=>`<a href="javascript:void 0" data-k="${k}" class="${i===0?"on":""}">${v.t}</a>`).join("")}</div>
+  <div class="toolnav" id="ilTabs" role="group" aria-label="${T({id:"Pilih indikator",en:"Choose an indicator"})}">${Object.entries(IND).map(([k,v],i)=>`<button type="button" data-k="${k}" class="${i===0?"on":""}" aria-pressed="${i===0}">${v.t}</button>`).join("")}</div>
   <div id="ilInd"></div>
   <h2>${T({id:"2 · Backtest: berapa peluangnya di saham ini?",en:"2 · Backtest: what are the odds on this stock?"})}</h2>
   <div class="card"><div class="form">
@@ -141,11 +169,12 @@ function mount(el){
    <tr><td>${T({id:"Downtrend",en:"Downtrend"})}</td><td>${T({id:"Tidak beli — tunggu harga kembali di atas awan/MA200",en:"Don't buy — wait for price back above the cloud/200-day MA"})}</td><td>${T({id:"Bandarmologi untuk mendeteksi akumulasi",en:"Bandarmology to detect accumulation"})}</td></tr>
    <tr><td>${T({id:"Squeeze (volatilitas sangat rendah)",en:"Squeeze (very low volatility)"})}</td><td>Bollinger</td><td>${T({id:"Volume & broker summary untuk arah breakout",en:"Volume & broker summary for breakout direction"})}</td></tr></table></div>
   <p class="prose">${T({id:"Menggabungkan indikator yang <b>mengukur hal berbeda</b> (tren = Ichimoku/MA, momentum = RSI, level harga = Fibonacci, aliran dana = volume/broker) lebih berguna daripada menumpuk indikator yang sama-sama dari harga penutupan. Tapi setiap syarat tambahan juga mengurangi jumlah sinyal — dengan transaksi sedikit, win rate tinggi bisa jadi hanya kebetulan. Perhatikan rentang keyakinan di hasil backtest.",en:"Combining indicators that <b>measure different things</b> (trend = Ichimoku/MA, momentum = RSI, price level = Fibonacci, flows = volume/broker) beats stacking several that all derive from the close. But every extra condition also reduces the number of signals — with few trades, a high win rate may be luck. Watch the confidence range in the backtest results."})}</p>`;
-  const showInd=k=>{ el.querySelectorAll("#ilTabs a").forEach(a=>a.classList.toggle("on",a.dataset.k===k)); const v=IND[k];
+  const showInd=k=>{ el.querySelectorAll("#ilTabs button").forEach(a=>{ const on=a.dataset.k===k; a.classList.toggle("on",on); a.setAttribute("aria-pressed",on?"true":"false"); }); const v=IND[k];
     el.querySelector("#ilInd").innerHTML=`<div class="grid g2"><div class="prose"><h3 style="margin-top:0">${v.t}</h3><p>${T(v.what)}</p><ol class="steps">${T(v.how).map(s=>`<li>${s}</li>`).join("")}</ol><div class="box trap"><h4>${window.L("Jebakan umum")}</h4>${T(v.trap)}</div>${({fib:1,rsi:1,ichi:1,bb:1,ma:1,macd:1})[k]?`<a class="btn" href="#/pelan/${k==="macd"?"ma":k}">🐢 ${T({id:"Pelajari pelan-pelan, langkah demi langkah",en:"Learn it slowly, step by step"})}</a>`:""}</div><div>${chartFor(k)}</div></div>`; window.linkTerms(el.querySelector("#ilInd")); };
-  el.querySelectorAll("#ilTabs a").forEach(a=>a.onclick=()=>showInd(a.dataset.k)); showInd("fib");
-  el.querySelector("#ilFile").onchange=e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const D=parseCSV(rd.result); if(D.length<260) throw new Error(T({id:"Butuh minimal ±260 baris harian (1 tahun).",en:"Need at least ~260 daily rows (1 year)."})); DATA=D; NAME=f.name; mount(el); }catch(err){ alert(err.message); } }; rd.readAsText(f); };
-  el.querySelector("#ilDemo").onclick=()=>{ DATA=demo(Math.floor(Math.random()*1e6)); NAME=T({id:"Data demo (acak, fiktif)",en:"Demo data (random, fictional)"}); mount(el); };
+  el.querySelectorAll("#ilTabs button").forEach(a=>a.onclick=()=>showInd(a.dataset.k)); showInd("fib");
+  el.querySelector("#ilFile").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) dataM.send("LOAD",f); };
+  el.querySelector("#ilDemo").onclick=()=>dataM.send("DEMO");
+  dataM.bind(el.querySelector("#ilStatus")); setStatus();
   const opt=()=>{ const g=id=>parseFloat(el.querySelector("#"+id).value)||0; return {sl:g("btSL"),tp:g("btTP"),max:g("btMax")||9999,fb:g("btFB"),fs:g("btFS")}; };
   el.querySelector("#btRun").onclick=()=>runOne(el,el.querySelector("#btS").value,opt());
   el.querySelector("#btAll").onclick=()=>runAll(el,opt());
@@ -181,5 +210,5 @@ function runAll(el,opt){
   ${rows.map(r=>`<tr><td>${T(STRATS[r.k].n)}</td><td class="num">${r.a.n}</td><td class="num">${pct(r.a.wr)} <span class="hint">(${pct(r.a.lo)}–${pct(r.a.hi)})</span></td><td class="num ${r.a.exp>=0?"up":"down"}">${pct(r.a.exp)}</td><td class="num ${r.a.tot>=0?"up":"down"}">${pct(r.a.tot)}</td><td class="num ${r.o.exp>=0?"up":"down"}">${r.o.n?pct(r.o.exp):"–"}</td><td class="num down">−${pct(r.a.dd)}</td></tr>`).join("")}</table></div>
   <p class="hint">${T({id:"Buy & hold periode ini:",en:"Buy & hold over this period:"})} <b>${pct(DATA[DATA.length-1].c/DATA[0].c-1)}</b>. ${T({id:"Memilih strategi teratas dari tabel ini lalu menganggapnya 'terbukti' adalah contoh data snooping — uji lagi di saham & periode lain.",en:"Picking the top row and calling it 'proven' is data snooping — re-test it on other stocks and periods."})}</p>`;
 }
-window.Indicators={mount};
+window.Indicators={mount, unmount:()=>{ mountedEl=null; }};
 })();

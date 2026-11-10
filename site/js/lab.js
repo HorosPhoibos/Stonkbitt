@@ -73,7 +73,7 @@ function checkSpoof(){
   // harga mendekat (best bid hanya 1 tick di atas tembok) → tarik
   if(S.bids[0].p<=up(L.p)){
     L.lot=Math.max(1,L.lot-L.spoof); L.freq=Math.max(1,L.freq-2); delete L.spoof; S.pulls++;
-    setTimeout(()=>{ if(S) placeSpoof(); }, 1200);
+    const round=S; setTimeout(()=>{ if(S===round && labM && labM.is("running")) placeSpoof(); }, 1200);
   }
 }
 function brokerFor(type){ // type: actor | retail
@@ -194,8 +194,8 @@ function mount(el){
     <select id="lbSpd"><option value="1000">Update tiap 1 detik</option><option value="2000" selected>Tiap 2 detik</option><option value="3000">Tiap 3 detik</option></select>
     <label class="chk"><input type="checkbox" id="lbX"> Mode X-ray (F/D & broker)</label>
     <button class="btn" id="lbStart">▶ Mulai ronde baru</button>
-    <button class="btn sec" id="lbPause">❚❚ Jeda</button>
-    <span class="timer" id="lbTimer"></span>
+    <button class="btn sec" id="lbPause" aria-describedby="lbTimer">❚❚ Jeda</button>
+    <span class="timer" id="lbTimer" aria-live="off"></span>
     <span class="hint">Skor: <b id="lbScore">${saved.c}/${saved.r}</b></span>
   </div>
   <div class="lab">
@@ -211,24 +211,42 @@ function mount(el){
       <div id="lbGuess"></div>
     </div>
   </div>
-  <div id="lbReveal" class="reveal"></div>`;
+  <div id="lbReveal" class="reveal" role="status" aria-live="polite"></div>`;
   const $=id=>el.querySelector("#"+id);
-  $("lbStart").onclick=()=>start();
-  $("lbPause").onclick=()=>{ if(timer){clearInterval(timer);timer=null;$("lbPause").textContent="▶ Lanjut";} else if(S && !S.guessed){ run(); $("lbPause").textContent="❚❚ Jeda"; } };
+  labM=makeLabMachine(); labM.bind(el);
+  $("lbStart").onclick=()=>labM.send("START");
+  $("lbPause").onclick=()=>labM.send(labM.is("running")?"PAUSE":"RESUME");
   $("lbX").onchange=()=>S&&render();
-  $("lbSpd").onchange=()=>{ if(timer) run(); };
-  start();
+  $("lbSpd").onchange=()=>labM.send("SPEED");
+  labM.send("START");
 }
-function run(){ clearInterval(timer); timer=setInterval(step, +root.querySelector("#lbSpd").value); }
-function start(){
+/* Ronde lab — machine "orderBookLab":
+   idle --START--> running ⇄ (PAUSE/RESUME) paused ; running|paused --GUESS--> revealed ; * --START--> running (ronde baru) ; * --STOP--> idle.
+   Timer hanya hidup di "running" (dibuat di enter, dibersihkan di exit) → tidak ada interval yatim. Waktu amatan hanya dihitung saat running. */
+let labM=null;
+function startTimer(){ clearInterval(timer); timer=setInterval(step, +root.querySelector("#lbSpd").value); }
+function stopTimer(){ clearInterval(timer); timer=null; }
+function activeSecs(){ const c=labM.context; return Math.round((c.active+(labM.is("running")?Date.now()-c.since:0))/1000); }
+function renderControls(){ if(!root) return; const b=root.querySelector("#lbPause"); const st=labM.state;
+  b.disabled=!(st==="running"||st==="paused"); b.textContent=st==="paused"?"▶ Lanjut":"❚❚ Jeda";
+  b.setAttribute("aria-label", st==="paused"?"Lanjutkan ronde":"Jeda ronde"); render(); }
+function newRoundAction(c){
   const q=id=>root.querySelector("#"+id);
+  stopTimer(); c.active=0; c.since=Date.now();
   newRound({profile:q("lbProf").value, scenario:q("lbSc").value});
-  q("lbReveal").innerHTML=""; q("lbPause").textContent="❚❚ Jeda";
+  q("lbReveal").innerHTML="";
   for(let i=0;i<3;i++) step();
-  run();
-  renderGuess();
+  renderGuess(); startTimer(); }
+function makeLabMachine(){
+  return window.Machines.create({ id:"orderBookLab", initial:"idle", context:{active:0,since:0}, states:{
+    idle:{ enter:()=>{ stopTimer(); }, on:{ START:{target:"running", action:newRoundAction} } },
+    running:{ enter:(c)=>{ c.since=Date.now(); startTimer(); renderControls(); }, exit:(c)=>{ c.active+=Date.now()-c.since; stopTimer(); },
+      on:{ PAUSE:"paused", GUESS:{target:"revealed", action:guessAction}, START:{target:"running", action:(c)=>{ newRoundAction(c); renderControls(); }},
+           SPEED:{ action:()=>startTimer() }, STOP:"idle" } },
+    paused:{ enter:()=>renderControls(), on:{ RESUME:"running", GUESS:{target:"revealed", action:guessAction}, START:{target:"running", action:newRoundAction}, STOP:"idle" } },
+    revealed:{ enter:()=>renderControls(), on:{ START:{target:"running", action:newRoundAction}, STOP:"idle" } } } });
 }
-function unmount(){ clearInterval(timer); timer=null; root=null; }
+function unmount(){ if(labM) labM.send("STOP"); stopTimer(); root=null; }
 
 function render(){
   if(!root||!S) return;
@@ -237,7 +255,7 @@ function render(){
   q("lbCode").textContent=S.prof.code; q("lbPx").textContent=fmt(S.last);
   q("lbPx").className="px "+(chg>0?"up":chg<0?"down":"");
   q("lbChg").innerHTML=`<span class="${chg>=0?"up":"down"}">${chg>=0?"+":""}${fmt(S.last-S.open)} (${chg.toFixed(2)}%)</span>`;
-  const secs=Math.round((Date.now()-S.t0)/1000); q("lbTimer").textContent=S.guessed? "" : `⏱ ${secs}s ${secs<25?"— amati dulu…":"— silakan tebak"}`;
+  const secs=labM?activeSecs():0; q("lbTimer").textContent=labM&&labM.is("revealed")? "" : `⏱ ${secs}s${labM&&labM.is("paused")?" (dijeda)":""} ${secs<25?"— amati dulu…":"— silakan tebak"}`;
   // order book
   const mx=Math.max(...S.bids.map(b=>b.lot),...S.offers.map(o=>o.lot));
   let h=`<tr><th>Freq</th><th>Lot</th><th>Bid</th><th>Offer</th><th>Lot</th><th>Freq</th></tr>`;
@@ -279,14 +297,12 @@ function drawSpark(cv){
 function renderGuess(){
   const g=root.querySelector("#lbGuess");
   g.innerHTML=`<h3 style="margin-top:14px">Apa yang sedang terjadi?</h3><div class="guess">${Object.entries(SC).map(([k,s])=>`<button data-k="${k}">${s.label}</button>`).join("")}</div>`;
-  g.querySelectorAll("button").forEach(b=>b.onclick=()=>guess(b.dataset.k, b));
+  window.QuizUI.bind(g,{ buttons:".guess button", key:b=>b.dataset.k, correct:()=>S.key, onAnswer:(k)=>labM.send("GUESS",{k}) });
 }
-function guess(k, btn){
-  if(S.guessed) return; S.guessed=true; clearInterval(timer); timer=null;
-  const ok = k===S.key;
-  root.querySelectorAll("#lbGuess button").forEach(b=>{ if(b.dataset.k===S.key) b.classList.add("right"); else if(b===btn) b.classList.add("wrong"); });
-  const sv = JSON.parse(localStorage.getItem("sb_lab")||'{"r":0,"c":0}'); sv.r++; if(ok) sv.c++;
-  localStorage.setItem("sb_lab", JSON.stringify(sv)); root.querySelector("#lbScore").textContent=`${sv.c}/${sv.r}`;
+function guessAction(c,p){
+  const ok = p.k===S.key;
+  let sv={r:0,c:0}; try{ sv=JSON.parse(localStorage.getItem("sb_lab")||'{"r":0,"c":0}'); }catch(e){} sv.r++; if(ok) sv.c++;
+  try{ localStorage.setItem("sb_lab", JSON.stringify(sv)); }catch(e){} root.querySelector("#lbScore").textContent=`${sv.c}/${sv.r}`;
   reveal(ok);
 }
 const WHY = {
@@ -335,5 +351,5 @@ function reveal(ok){
 }
 
 window.Lab = {mount, unmount, _sim(profile, scenario, n){ // dipakai untuk kalibrasi
-  const keep=root; root=null; newRound({profile, scenario}); for(let i=0;i<n;i++) step(); const r={chg:(S.last-S.open)/S.open*100, bp:S.haka/(S.haka+S.haki)*100, avg:S.lotSum/S.n, big:S.big, refills:S.refills, pulls:S.pulls}; root=keep; return r; }};
+  const keep=root, keepS=S; root=null; newRound({profile, scenario}); for(let i=0;i<n;i++) step(); const r={chg:(S.last-S.open)/S.open*100, bp:S.haka/(S.haka+S.haki)*100, avg:S.lotSum/S.n, big:S.big, refills:S.refills, pulls:S.pulls}; root=keep; S=keepS; return r; }};
 })();

@@ -66,17 +66,15 @@ function newBS(el){
   </div>
   <p class="hint">Tag ungu = broker institusi asing, biru-muda = broker lokal/ritel. Top-3 buyer: <b>${sumTop3(d.B).toFixed(0)}%</b> · Top-3 seller: <b>${sumTop3(d.S).toFixed(0)}%</b> dari total ${fmt(d.T)} lot.</p>
   <h3>Cerita apa yang paling mungkin?</h3>
-  <div class="guess">${Object.entries(BS).map(([k,s])=>`<button data-k="${k}">${s.label}</button>`).join("")}</div>
-  <div id="bsRev" class="reveal"></div>`;
-  el.querySelectorAll("#bsBody .guess button").forEach(b=>b.onclick=()=>{
-    if(el.querySelector("#bsRev").innerHTML) return;
-    const ok=b.dataset.k===d.key;
-    el.querySelectorAll("#bsBody .guess button").forEach(x=>{ if(x.dataset.k===d.key) x.classList.add("right"); else if(x===b) x.classList.add("wrong"); });
-    const sv=JSON.parse(localStorage.getItem("sb_bs")||'{"r":0,"c":0}'); sv.r++; if(ok) sv.c++; localStorage.setItem("sb_bs",JSON.stringify(sv));
-    el.querySelector("#bsScore").textContent=`${sv.c}/${sv.r}`;
-    el.querySelector("#bsRev").innerHTML=`<div class="card"><h3 style="margin-top:0">${ok?"✅ Tepat":"❌ Belum tepat"} — ${BS[d.key].label}</h3><p>${BS[d.key].why}</p><button class="btn" id="bsNext">Soal berikutnya →</button></div>`;
-    el.querySelector("#bsNext").onclick=()=>{newBS(el); window.scrollTo({top:0,behavior:"smooth"});};
-  });
+  <div class="bsq"><div class="guess">${Object.entries(BS).map(([k,s])=>`<button data-k="${k}">${s.label}</button>`).join("")}</div>
+  <div class="ex reveal"></div></div>`;
+  window.QuizUI.bind(el.querySelector("#bsBody .bsq"),{ buttons:".guess button", key:b=>b.dataset.k, correct:d.key,
+    onAnswer:(k,ok)=>{
+      let sv={r:0,c:0}; try{ sv=JSON.parse(localStorage.getItem("sb_bs")||'{"r":0,"c":0}'); }catch(e){} sv.r++; if(ok) sv.c++; try{ localStorage.setItem("sb_bs",JSON.stringify(sv)); }catch(e){}
+      el.querySelector("#bsScore").textContent=`${sv.c}/${sv.r}`;
+      const ex=el.querySelector("#bsBody .bsq .ex");
+      ex.innerHTML=`<div class="card"><h3 style="margin-top:0">${ok?"✅ Tepat":"❌ Belum tepat"} — ${BS[d.key].label}</h3><p>${BS[d.key].why}</p><button class="btn" id="bsNext">Soal berikutnya →</button></div>`;
+      ex.querySelector("#bsNext").onclick=()=>{newBS(el); window.scrollTo({top:0,behavior:"smooth"});}; } });
 }
 
 /* ---------------- Kamus broker ---------------- */
@@ -104,9 +102,9 @@ function mountBroker(el){
 }
 function quiz(box){
   const b=pick(window.BROKERS); const opts=shuffle([b,...shuffle(window.BROKERS.filter(x=>x!==b)).slice(0,3)]);
-  box.innerHTML=`<div class="card" style="margin-bottom:16px"><p>Kode <b class="mono" style="font-size:24px">${b.c}</b> adalah…</p><div class="guess">${opts.map(o=>`<button data-c="${o.c}">${o.n}</button>`).join("")}</div><p id="qzR" class="hint"></p></div>`;
-  box.querySelectorAll("button").forEach(x=>x.onclick=()=>{ const ok=x.dataset.c===b.c; box.querySelectorAll("button").forEach(y=>{ if(y.dataset.c===b.c) y.classList.add("right"); else if(y===x) y.classList.add("wrong"); });
-    box.querySelector("#qzR").innerHTML=`${ok?"✅":"❌"} ${b.c} = ${b.n} · ${window.BROKER_GROUP[b.g].label}. ${b.k} <a href="javascript:void 0" id="qzN">Soal lagi →</a>`; box.querySelector("#qzN").onclick=()=>quiz(box); });
+  box.innerHTML=`<div class="card" style="margin-bottom:16px"><p>Kode <b class="mono" style="font-size:24px">${b.c}</b> adalah…</p><div class="guess">${opts.map(o=>`<button data-c="${o.c}">${o.n}</button>`).join("")}</div><p class="hint ex"></p></div>`;
+  window.QuizUI.bind(box.querySelector(".card"),{ buttons:".guess button", key:x=>x.dataset.c, correct:b.c,
+    onAnswer:(k,ok)=>{ const ex=box.querySelector(".ex"); ex.innerHTML=`${ok?"✅":"❌"} ${b.c} = ${b.n} · ${window.BROKER_GROUP[b.g].label}. ${b.k} <button class="linkbtn qzN">Soal lagi →</button>`; ex.querySelector(".qzN").onclick=()=>quiz(box); } });
 }
 
 /* ---------------- Matriks asing ---------------- */
@@ -136,9 +134,9 @@ function mountAsing(el){
   <h2>Kuis kasus</h2><div id="asQ"></div>`;
   let i=0; const box=el.querySelector("#asQ");
   const show=()=>{ const c=CASES[i%CASES.length];
-    box.innerHTML=`<div class="card"><p class="hint">Kasus ${i%CASES.length+1}/${CASES.length}</p><p><b>${c.q}</b></p><div class="guess">${ANS.map((a,k)=>`<button data-k="${k}">${a}</button>`).join("")}</div><p id="asR" class="hint"></p></div>`;
-    box.querySelectorAll("button").forEach(b=>b.onclick=()=>{ box.querySelectorAll("button").forEach(x=>{ if(+x.dataset.k===c.a) x.classList.add("right"); else if(x===b) x.classList.add("wrong"); });
-      box.querySelector("#asR").innerHTML=`${+b.dataset.k===c.a?"✅ Tepat.":"❌ Jawaban: "+ANS[c.a]+"."} <a href="javascript:void 0" id="asN">Kasus berikutnya →</a>`; box.querySelector("#asN").onclick=()=>{i++;show();}; }); };
+    box.innerHTML=`<div class="card"><p class="hint">Kasus ${i%CASES.length+1}/${CASES.length}</p><p><b>${c.q}</b></p><div class="guess">${ANS.map((a,k)=>`<button data-k="${k}">${a}</button>`).join("")}</div><p class="hint ex"></p></div>`;
+    window.QuizUI.bind(box.querySelector(".card"),{ buttons:".guess button", key:b=>b.dataset.k, correct:String(c.a),
+      onAnswer:(k,ok)=>{ const ex=box.querySelector(".ex"); ex.innerHTML=`${ok?"✅ Tepat.":"❌ Jawaban: "+ANS[c.a]+"."} <button class="linkbtn asN">Kasus berikutnya →</button>`; ex.querySelector(".asN").onclick=()=>{i++;show();}; } }); };
   show();
 }
 

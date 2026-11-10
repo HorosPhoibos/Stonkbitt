@@ -374,72 +374,109 @@ const TF={
  en:`<ul><li><b>Daily</b>: MA20 (short), MA50 (medium), MA200 (~1 year, the big trend).</li><li><b>Weekly</b>: a 40-week MA ≈ the 200-day MA.</li><li><b>Hourly</b>: a 20-hour MA ≈ 4 IDX trading days — useful for entry timing, not for the big trend.</li></ul>`},
 };
 
-/* ---------- 🔊 Bacakan ---------- */
-const RA={ utts:[], on:false };
-function voiceFor(){ const vs=speechSynthesis.getVoices(); const want=window.LANG==="en"?"en":"id"; return vs.find(v=>v.lang.toLowerCase().startsWith(want)); }
+/* ---------- 🔊 Bacakan — machine "readAloud": unsupported | idle ⇄ speaking ----------
+   PLAY (idle→speaking), STOP (speaking→idle), END (speaking→idle, hanya jika token pemutaran cocok).
+   Token mencegah event "end" dari pemutaran lama mematikan pemutaran yang baru. */
+const RA_SUPPORTED="speechSynthesis" in window;
+let raBar=null, raTarget=null, raToken=0;
+function voiceFor(){ const vs=speechSynthesis.getVoices(); const want=window.LANG==="en"?"en":"id"; return {any:vs.length>0, v:vs.find(v=>v.lang.toLowerCase().replace("_","-").startsWith(want))}; }
+function raRender(){ if(!raBar||!raBar.isConnected) return; const play=raBar.querySelector(".rb-play"), stop=raBar.querySelector(".rb-stop");
+  const st=raM.state; play.hidden=st==="speaking"; stop.hidden=st!=="speaking"; play.disabled=st==="unsupported";
+  raBar.dataset.machine="readAloud"; raBar.dataset.state=st; }
+const raM=window.Machines.create({ id:"readAloud", initial:RA_SUPPORTED?"idle":"unsupported", context:{token:0}, states:{
+  unsupported:{ on:{} },
+  idle:{ enter:()=>{ raToken++; if(RA_SUPPORTED) speechSynthesis.cancel(); raRender(); },
+    on:{ PLAY:{ target:"speaking", guard:()=>!!raBar&&!!raTarget } } },
+  speaking:{ enter:()=>{ const tok=++raToken; speechSynthesis.cancel();
+      const msg=raBar.querySelector(".rb-msg"), rate=raBar.querySelector(".rb-rate");
+      const el=typeof raTarget==="function"?raTarget():raTarget; const clone=el.cloneNode(true); clone.querySelectorAll("svg,.readbar,button,select,.formula,textarea,.quiz .guess").forEach(x=>x.remove());
+      const text=clone.innerText.replace(/\s+/g," ").trim(); const parts=(text.match(/[^.!?…]+[.!?…]*/g)||[text]).map(x=>x.trim()).filter(Boolean);
+      const {any,v}=voiceFor();
+      msg.textContent = any&&!v ? T({id:"Suara Bahasa Indonesia belum terpasang — di Mac: System Settings › Accessibility › Spoken Content › System voice › Manage Voices › Indonesian.",en:"No matching voice installed on this device."}) : "";
+      if(!parts.length){ raM.send("END",{token:tok}); return; }
+      parts.forEach((p,i)=>{ const u=new SpeechSynthesisUtterance(p); u.lang=window.LANG==="en"?"en-US":"id-ID"; if(v) u.voice=v; u.rate=parseFloat(rate.value)||.9;
+        if(i===parts.length-1){ u.onend=()=>raM.send("END",{token:tok}); }
+        u.onerror=(e)=>{ if(e.error!=="interrupted"&&e.error!=="canceled") raM.send("END",{token:tok}); };
+        speechSynthesis.speak(u); });
+      raRender(); },
+    on:{ STOP:"idle", END:{ target:"idle", guard:(c,p)=>!!p&&p.token===raToken } } } } });
 function readBar(){ return `<div class="readbar"><button class="btn sec rb-play">🔊 ${T({id:"Bacakan",en:"Read aloud"})}</button><button class="btn sec rb-stop" hidden>⏹ ${T({id:"Berhenti",en:"Stop"})}</button>
- <label class="hint">${T({id:"Kecepatan",en:"Speed"})} <select class="rb-rate"><option value=".75">0,75×</option><option value=".9" selected>0,9×</option><option value="1">1×</option><option value="1.15">1,15×</option></select></label><span class="hint rb-msg"></span></div>`; }
+ <label class="hint">${T({id:"Kecepatan",en:"Speed"})} <select class="rb-rate"><option value=".75">0,75×</option><option value=".9" selected>0,9×</option><option value="1">1×</option><option value="1.15">1,15×</option></select></label><span class="hint rb-msg" role="status" aria-live="polite"></span></div>`; }
 function attachRead(bar, target){
-  if(!("speechSynthesis" in window)){ bar.querySelector(".rb-msg").textContent=T({id:"Browser ini tidak mendukung fitur bacakan.",en:"This browser doesn't support read-aloud."}); bar.querySelector(".rb-play").disabled=true; return; }
+  raM.send("STOP"); raBar=bar; raTarget=target;
   const play=bar.querySelector(".rb-play"), stop=bar.querySelector(".rb-stop"), rate=bar.querySelector(".rb-rate"), msg=bar.querySelector(".rb-msg");
+  if(raM.is("unsupported")) msg.textContent=T({id:"Browser ini tidak mendukung fitur bacakan.",en:"This browser doesn't support read-aloud."});
   try{ const r=localStorage.getItem("sb_rate"); if(r) rate.value=r; }catch(e){}
   rate.onchange=()=>{ try{ localStorage.setItem("sb_rate",rate.value); }catch(e){} };
-  const end=()=>{ speechSynthesis.cancel(); play.hidden=false; stop.hidden=true; };
-  stop.onclick=end;
-  play.onclick=()=>{ speechSynthesis.cancel();
-    const el=typeof target==="function"?target():target; const clone=el.cloneNode(true); clone.querySelectorAll("svg,.readbar,button,select,.formula,textarea").forEach(x=>x.remove());
-    const text=clone.innerText.replace(/\s+/g," ").trim(); const parts=text.match(/[^.!?…]+[.!?…]*/g)||[text];
-    const v=voiceFor(); if(!v) msg.textContent=T({id:"Suara Bahasa Indonesia belum terpasang — di Mac: System Settings › Accessibility › Spoken Content › System voice › Manage Voices › Indonesian.",en:"No matching voice installed on this device."}); else msg.textContent="";
-    parts.forEach((p,i)=>{ const u=new SpeechSynthesisUtterance(p.trim()); u.lang=window.LANG==="en"?"en-US":"id-ID"; if(v) u.voice=v; u.rate=parseFloat(rate.value); if(i===parts.length-1) u.onend=end; speechSynthesis.speak(u); });
-    play.hidden=true; stop.hidden=false; };
+  play.onclick=()=>raM.send("PLAY"); stop.onclick=()=>raM.send("STOP");
+  raRender();
 }
-window.ReadAloud={bar:readBar, attach:attachRead, stop:()=>{ if("speechSynthesis" in window) speechSynthesis.cancel(); }};
+window.ReadAloud={bar:readBar, attach:attachRead, stop:()=>raM.send("STOP")};
 
-/* ---------- UI ---------- */
-let cur=null;
-function mount(el,q,parts){
-  const key=parts&&parts[0];
-  if(!key){ el.innerHTML=`<div class="kicker">${T({id:"Belajar pelan-pelan",en:"Learn slowly"})}</div><h1>${T({id:"Belajar Pelan-pelan",en:"Learn Step by Step"})}</h1>
+/* ---------- UI — machine "guide": list | step (context: key, i, total) ----------
+   NEXT / PREV / GOTO(n) hanya berlaku di dalam batas langkah; tombol & tanda panah keyboard (← →) memakai event yang sama.
+   Kuis tiap langkah memakai QuizUI (open → answered). */
+let guideM=null, keyHandler=null;
+function indexPage(el){
+  el.innerHTML=`<div class="kicker">${T({id:"Belajar pelan-pelan",en:"Learn slowly"})}</div><h1>${T({id:"Belajar Pelan-pelan",en:"Learn Step by Step"})}</h1>
    <p class="lead">${T({id:"Setiap topik dijelaskan satu bagian per langkah. Di beberapa langkah grafik dipotong pada satu hari — kamu menebak dulu, lalu hari-hari berikutnya dibuka supaya kamu melihat sendiri apa yang terjadi setelah sinyal muncul, termasuk saat sinyalnya gagal.",en:"Each topic is explained one part per step. At some steps the chart is cut at a single day — you guess first, then the following days are revealed so you see for yourself what happened after the signal, including when it failed."})}</p>
    ${[["flow",{id:"Order book & bandarmologi",en:"Order book & bandarmology"}],["fund",{id:"Fundamental & valuasi",en:"Fundamentals & valuation"}],["ind",{id:"Indikator teknikal",en:"Technical indicators"}]].map(([c,lab])=>`<h2>${T(lab)}</h2><div class="grid g2">${GUIDES.filter(g=>(g.cat||"ind")===c).map(g=>`<a class="card" href="#/pelan/${g.key}"><h3 style="margin:0 0 6px">${T(g.t)}</h3><div class="hint">${g.sub?T(g.sub)+" · ":""}${T({id:"Mulai langkah demi langkah →",en:"Start step by step →"})}</div></a>`).join("")}</div>`).join("")}
-   <div class="note">${T({id:"Grafik memakai data fiktif yang dibuat agar contoh tiap pola terlihat jelas. Di saham sungguhan pola jarang serapi ini — latih lagi dengan data asli di Lab Indikator.",en:"Charts use fictional data built so each pattern is clearly visible. Real stocks are rarely this tidy — practise again with real data in the Indicator Lab."})}</div>`; return; }
+   <div class="note">${T({id:"Grafik memakai data fiktif yang dibuat agar contoh tiap pola terlihat jelas. Di saham sungguhan pola jarang serapi ini — latih lagi dengan data asli di Lab Indikator.",en:"Charts use fictional data built so each pattern is clearly visible. Real stocks are rarely this tidy — practise again with real data in the Indicator Lab."})}</div>`;
+}
+function bindQuiz(el,s,D){
+  const box=el.querySelector(".quiz"); if(!box) return;
+  if(s.quiz){
+    let o=null;
+    window.QuizUI.bind(box,{ buttons:".guess button", correct:()=>{ o=outcome(D,s.k,s.h); return cls(o.chg); },
+      onAnswer:(key,ok,real)=>{
+        el.querySelector(".gbody .chartbox").outerHTML=s.chart(true);
+        const days=o.e-s.k; const failed=s.exp!=="any"&&real!==s.exp;
+        box.querySelector(".ex").innerHTML=`<p><b class="${ok?"up":"down"}">${ok?T({id:"Tebakanmu tepat.",en:"You got it."}):T({id:"Belum tepat.",en:"Not this time."})}</b> ${T({id:`Dalam ${days} hari bursa berikutnya harga berubah <b>${pct(o.chg)}</b> (naik paling tinggi ${pct(o.maxUp)}, turun paling dalam ${pct(o.maxDn)}). Area berwarna di grafik adalah hari-hari yang baru dibuka.`,en:`Over the next ${days} trading days price moved <b>${pct(o.chg)}</b> (highest ${pct(o.maxUp)}, deepest ${pct(o.maxDn)}). The shaded area is the newly revealed days.`})}</p>
+         <p>${T(s.why)}</p>${failed?`<p class="note warn"><b>${T({id:"Sinyal gagal di contoh ini.",en:"The signal failed here."})}</b> ${T({id:"Inilah kenyataan indikator: ia memberi peluang, bukan kepastian. Karena itu setiap sinyal butuh stop loss.",en:"That's the reality of indicators: they give odds, not certainty. That's why every signal needs a stop loss."})}</p>`:""}`;
+        window.linkTerms(box.querySelector(".ex")); } });
+  } else if(s.opts){
+    window.QuizUI.bind(box,{ buttons:".guess button", correct:s.ans,
+      onAnswer:(key,ok)=>{
+        if(s.reveal){ const r=document.createElement("div"); r.className="quiz-reveal"; r.innerHTML=s.reveal(); box.after(r); }
+        box.querySelector(".ex").innerHTML=`<p><b class="${ok?"up":"down"}">${ok?T({id:"Tepat.",en:"Correct."}):T({id:"Belum tepat.",en:"Not quite."})}</b> ${T(s.why)}</p>`;
+        window.linkTerms(box.querySelector(".ex")); } });
+  }
+}
+function mount(el,q,parts){
+  unmount();
+  const key=parts&&parts[0];
+  if(!key){ guideM=window.Machines.create({id:"guide",initial:"list",states:{list:{on:{}}}}).bind(el); indexPage(el); return; }
   const g=GUIDES.find(x=>x.key===key); if(!g){ location.hash="#/pelan"; return; }
-  const D=g.data(), X=g.build(D), steps=g.steps(D,X);
-  let i=Math.min(+(q.s||1)-1,steps.length-1); if(!(i>=0)) i=0;
-  const draw=()=>{ const s=steps[i]; window.ReadAloud.stop();
-    el.innerHTML=`<article class="lesson guide">
+  const D=g.data(), X=g.build(D), steps=g.steps(D,X), total=steps.length;
+  let start=parseInt(q.s,10)-1; if(!(start>=0&&start<total)) start=0;
+  const draw=(ctx)=>{ const i=ctx.i, s=steps[i]; window.ReadAloud.stop();
+    el.innerHTML=`<article class="lesson guide" data-guide="${key}" data-step="${i+1}" data-total="${total}">
     <div class="kicker"><a href="#/pelan">${T({id:"Belajar Pelan-pelan",en:"Learn Step by Step"})}</a> · ${T(g.t)}</div>
-    <div class="dots">${steps.map((_,k)=>`<button class="${k===i?"on":k<i?"done":""}" data-k="${k}" aria-label="${k+1}">${k+1}</button>`).join("")}</div>
-    <h1>${T(s.t)}</h1>
+    <nav class="dots" aria-label="${T({id:"Langkah",en:"Steps"})}">${steps.map((_,k)=>`<button class="${k===i?"on":k<i?"done":""}" data-k="${k}" aria-label="${T({id:"Langkah",en:"Step"})} ${k+1} / ${total}"${k===i?' aria-current="step"':""}>${k+1}</button>`).join("")}</nav>
+    <h1 tabindex="-1">${T(s.t)}</h1>
     ${readBar()}
     <div class="gbody">${s.tf? T(TF[s.tf]) : ""}${s.chart? s.chart(false) : ""}${s.text? T(s.text):""}</div>
     ${s.opts?`<div class="quiz"><div class="qn">${T({id:"Tebakanmu",en:"Your guess"})}</div><p>${T(s.q)}</p><div class="guess">${s.opts.map(o=>`<button data-a="${o.a}">${T(o.l)}</button>`).join("")}</div><div class="ex"></div></div>`:""}${s.quiz?`<div class="quiz"><div class="qn">${T({id:"Tebakanmu",en:"Your guess"})}</div><div class="guess"><button data-a="up">▲ ${T({id:"Naik (lebih dari +3%)",en:"Rise (more than +3%)"})}</button><button data-a="flat">◆ ${T({id:"Datar (−3% s.d. +3%)",en:"Flat (−3% to +3%)"})}</button><button data-a="down">▼ ${T({id:"Turun (lebih dari −3%)",en:"Fall (more than −3%)"})}</button></div><div class="ex"></div></div>`:""}
     <div class="lessonnav">${i>0?`<button class="btn sec" id="gPrev">← ${T({id:"Sebelumnya",en:"Previous"})}</button>`:`<a class="btn sec" href="#/pelan">← ${T({id:"Daftar",en:"List"})}</a>`}
-     ${i<steps.length-1?`<button class="btn" id="gNext">${T({id:"Berikutnya",en:"Next"})} →</button>`:`<a class="btn" href="${g.endHref||"#/indikator"}">${T(g.endLabel||{id:"Uji di Lab Indikator →",en:"Test in the Indicator Lab →"})}</a>`}</div></article>`;
+     ${i<total-1?`<button class="btn" id="gNext">${T({id:"Berikutnya",en:"Next"})} →</button>`:`<a class="btn" href="${g.endHref||"#/indikator"}">${T(g.endLabel||{id:"Uji di Lab Indikator →",en:"Test in the Indicator Lab →"})}</a>`}</div>
+    <p class="hint kbdhint">${T({id:"Tip: tombol ← dan → di keyboard juga berpindah langkah.",en:"Tip: the ← and → keys also move between steps."})}</p></article>`;
     window.ReadAloud.attach(el.querySelector(".readbar"), ()=>el.querySelector(".gbody"));
-    el.querySelectorAll(".dots button").forEach(b=>b.onclick=()=>{ i=+b.dataset.k; go(); });
-    const p=el.querySelector("#gPrev"), n=el.querySelector("#gNext"); if(p) p.onclick=()=>{ i--; go(); }; if(n) n.onclick=()=>{ i++; go(); };
-    if(s.quiz) el.querySelectorAll(".quiz button").forEach(b=>b.onclick=()=>{ const box=el.querySelector(".quiz"); if(box.dataset.done) return; box.dataset.done=1;
-      const o=outcome(D,s.k,s.h), real=cls(o.chg);
-      el.querySelectorAll(".quiz button").forEach(x=>{ if(x.dataset.a===real) x.classList.add("right"); else if(x===b) x.classList.add("wrong"); });
-      el.querySelector(".gbody").querySelector(".chartbox").outerHTML=s.chart(true);
-      const days=o.e-s.k; const ok=b.dataset.a===real;
-      const failed = s.exp!=="any" && real!==s.exp;
-      box.querySelector(".ex").innerHTML=`<p><b class="${ok?"up":"down"}">${ok?T({id:"Tebakanmu tepat.",en:"You got it."}):T({id:"Belum tepat.",en:"Not this time."})}</b> ${T({id:`Dalam ${days} hari bursa berikutnya harga berubah <b>${pct(o.chg)}</b> (naik paling tinggi ${pct(o.maxUp)}, turun paling dalam ${pct(o.maxDn)}). Area berwarna di grafik adalah hari-hari yang baru dibuka.`,en:`Over the next ${days} trading days price moved <b>${pct(o.chg)}</b> (highest ${pct(o.maxUp)}, deepest ${pct(o.maxDn)}). The shaded area is the newly revealed days.`})}</p>
-       <p>${T(s.why)}</p>${failed?`<p class="note warn"><b>${T({id:"Sinyal gagal di contoh ini.",en:"The signal failed here."})}</b> ${T({id:"Inilah kenyataan indikator: ia memberi peluang, bukan kepastian. Karena itu setiap sinyal butuh stop loss.",en:"That's the reality of indicators: they give odds, not certainty. That's why every signal needs a stop loss."})}</p>`:""}`;
-    });
-    if(s.opts) el.querySelectorAll(".quiz button").forEach(b=>b.onclick=()=>{ const box=el.querySelector(".quiz"); if(box.dataset.done) return; box.dataset.done=1;
-      const ok=b.dataset.a===s.ans;
-      el.querySelectorAll(".quiz button").forEach(x=>{ if(x.dataset.a===s.ans) x.classList.add("right"); else if(x===b) x.classList.add("wrong"); });
-      if(s.reveal){ const r=document.createElement("div"); r.innerHTML=s.reveal(); box.after(r); }
-      box.querySelector(".ex").innerHTML=`<p><b class="${ok?"up":"down"}">${ok?T({id:"Tepat.",en:"Correct."}):T({id:"Belum tepat.",en:"Not quite."})}</b> ${T(s.why)}</p>`;
-      window.linkTerms(box.querySelector(".ex"));
-    });
+    el.querySelectorAll(".dots button").forEach(b=>b.onclick=()=>guideM.send("GOTO",+b.dataset.k));
+    const p=el.querySelector("#gPrev"), n=el.querySelector("#gNext"); if(p) p.onclick=()=>guideM.send("PREV"); if(n) n.onclick=()=>guideM.send("NEXT");
+    bindQuiz(el,s,D);
     window.linkTerms(el.querySelector(".gbody"));
     if(window.Guide.afterDraw) window.Guide.afterDraw(el);
   };
-  const go=()=>{ history.replaceState(null,"",`#/pelan/${key}?s=${i+1}`); draw(); window.scrollTo(0,0); };
-  draw();
+  const go=(ctx)=>{ history.replaceState(null,"",`#/pelan/${key}?s=${ctx.i+1}`); draw(ctx); window.scrollTo(0,0); const h=el.querySelector("h1"); if(h) h.focus({preventScroll:true}); };
+  guideM=window.Machines.create({ id:"guide", initial:"step", context:{key,i:start,total}, states:{ step:{ on:{
+    NEXT:{ guard:c=>c.i<c.total-1, action:(c)=>{ c.i++; go(c); } },
+    PREV:{ guard:c=>c.i>0, action:(c)=>{ c.i--; go(c); } },
+    GOTO:{ guard:(c,n)=>Number.isInteger(n)&&n>=0&&n<c.total&&n!==c.i, action:(c,n)=>{ c.i=n; go(c); } } } } } }).bind(el);
+  keyHandler=e=>{ if(e.altKey||e.ctrlKey||e.metaKey||e.shiftKey) return; const t=e.target; if(t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable)) return;
+    if(e.key==="ArrowRight"&&guideM.send("NEXT")) e.preventDefault(); else if(e.key==="ArrowLeft"&&guideM.send("PREV")) e.preventDefault(); };
+  document.addEventListener("keydown",keyHandler);
+  draw(guideM.context);
 }
-window.Guide={mount, unmount:()=>window.ReadAloud.stop(), list:GUIDES};
+function unmount(){ window.ReadAloud.stop(); if(keyHandler){ document.removeEventListener("keydown",keyHandler); keyHandler=null; } }
+window.Guide={mount, unmount, list:GUIDES};
 })();

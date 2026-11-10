@@ -1,4 +1,4 @@
-/* Stonkbitt design system
+/* Ritelrasional.app design system
    Dasar keterbacaan:
    - Teks isi 17–18px, line-height 1.65 (WCAG 1.4.12: ≥1.5).
    - Lebar baris maks ±68 karakter (rentang 50–75 karakter yang direkomendasikan tipografer & studi keterbacaan layar).
@@ -181,8 +181,8 @@ canvas{width:100%;display:block}
 .out .stat:last-child{border-bottom:0}
 .out .big{font-size:24px;font-weight:700;font-family:var(--mono)}
 .toolnav{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 20px}
-.toolnav a{font-size:13.5px;padding:5px 11px;border:1px solid var(--line2);border-radius:999px;color:var(--muted);text-decoration:none;background:var(--panel)}
-.toolnav a:hover,.toolnav a.on{border-color:var(--brand);color:var(--text)}
+.toolnav a,.toolnav button{font:inherit;cursor:pointer;font-size:13.5px;padding:5px 11px;border:1px solid var(--line2);border-radius:999px;color:var(--muted);text-decoration:none;background:var(--panel)}
+.toolnav a:hover,.toolnav a.on,.toolnav button:hover,.toolnav button.on{border-color:var(--brand);color:var(--text)}
 
 .searchbox{width:100%;max-width:440px;margin:10px 0 14px}
 .flash-card{min-height:170px;display:flex;flex-direction:column;justify-content:center;cursor:pointer;text-align:center;font-size:19px}
@@ -211,7 +211,8 @@ canvas{width:100%;display:block}
 @media (max-width:860px){
   .app{grid-template-columns:minmax(0,1fr)}
   .side{position:fixed;inset:0 18% 0 0;z-index:50;transform:translateX(-105%);transition:transform .2s;height:100%}
-  .side.open{transform:none;box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
+  .side.open{transform:none;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+  .scrim:not([hidden]){display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:45}
   .topbar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--bg2);position:sticky;top:0;z-index:40}
   .topbar b{font-family:var(--serif);font-size:19px}
   main{padding:24px 16px 80px}
@@ -247,3 +248,22 @@ canvas{width:100%;display:block}
 .oblegend{margin-top:-6px}
 .obframes{grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))}
 .obg td{white-space:nowrap}
+
+/* --- state-driven UI (lihat docs/STATE_MACHINES.md) --- */
+.scrim{display:none}
+.skip{position:absolute;left:-999px;top:8px;z-index:200;background:var(--brand);color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none}
+.skip:focus{left:8px}
+main:focus,h1[tabindex]:focus{outline:none}
+.tld{color:var(--brand);font-weight:600}
+.brand b .tld{font-size:.78em}
+.guess button:disabled{cursor:default;opacity:1;color:var(--text)}
+.guess button:disabled:not(.right):not(.wrong){opacity:.55}
+.quiz[data-state="answered"] .guess button:hover{border-color:var(--line2)}
+.linkbtn{background:none;border:0;padding:0;font:inherit;color:var(--brand);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.il-status:empty{display:none}
+.il-status.error{color:var(--down);font-weight:700}
+button.flash-card{width:100%;font:inherit;color:var(--text);background:var(--panel)}
+button.flash-card:disabled{cursor:default}
+#lbPause:disabled{opacity:.45;cursor:not-allowed}
+.kbdhint{margin-top:10px}
+@media (hover:none){.kbdhint{display:none}}
